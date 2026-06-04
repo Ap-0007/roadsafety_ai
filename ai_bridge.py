@@ -34,7 +34,7 @@ def _load_detector():
     if str(_AI_DIR) not in sys.path:
         sys.path.insert(0, str(_AI_DIR))
     try:
-        from detector import RoadHazardDetector  # type: ignore
+        from submission.detector import RoadHazardDetector  # type: ignore
         model_path = _AI_DIR / "models" / "pothole.pt"
         det = RoadHazardDetector(
             pothole_model_path=str(model_path) if model_path.exists() else None,
