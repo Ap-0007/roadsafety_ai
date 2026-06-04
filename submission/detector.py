@@ -84,8 +84,15 @@ class FrameResult:
 
 class RoadHazardDetector:
     def __init__(self, pothole_model_path: Optional[str] = None, model_size: str = "s"):
-        # yolov8s.pt (~22 MB) — much better detection than yolov8n
-        self.general_model = YOLO(f"yolov8{model_size}.pt")
+
+        from pathlib import Path
+
+        model_file = Path(__file__).resolve().parent.parent / "yolov8s.pt"
+
+        print(f"[Detector] Loading model from: {model_file}")
+        print(f"[Detector] Exists: {model_file.exists()}")
+
+        self.general_model = YOLO(str(model_file))
 
         self.pothole_model: Optional[YOLO] = None
         if pothole_model_path and Path(pothole_model_path).exists():
