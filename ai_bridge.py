@@ -28,22 +28,50 @@ _AI_DIR = Path(__file__).parent
 
 def _load_detector():
     """Load RoadHazardDetector from sibling roadsafety_ai project."""
+    import traceback
+
+    print("=" * 60)
+    print("[AI Bridge] Starting detector load...")
+    print(f"[AI Bridge] AI_DIR = {_AI_DIR}")
+    print(f"[AI Bridge] Exists = {_AI_DIR.exists()}")
+    print("=" * 60)
+
     if not _AI_DIR.exists():
         print(f"[AI Bridge] roadsafety_ai not found at {_AI_DIR}")
         return None, False
+
     if str(_AI_DIR) not in sys.path:
         sys.path.insert(0, str(_AI_DIR))
+
     try:
-        from submission.detector import RoadHazardDetector  # type: ignore
+        print("[AI Bridge] Importing RoadHazardDetector...")
+
+        from submission.detector import RoadHazardDetector
+
+        print("[AI Bridge] Import successful")
+
         model_path = _AI_DIR / "models" / "pothole.pt"
+
+        print(f"[AI Bridge] pothole.pt exists = {model_path.exists()}")
+        print(f"[AI Bridge] pothole path = {model_path}")
+
         det = RoadHazardDetector(
             pothole_model_path=str(model_path) if model_path.exists() else None,
-            model_size="s",   # always use yolov8s — same as roadsafety_ai
+            model_size="s",
         )
-        print(f"[AI Bridge] ✅ YOLOv8s loaded — pothole model: {det.has_pothole_model}")
+
+        print("[AI Bridge] YOLO loaded successfully")
+        print(f"[AI Bridge] has_pothole_model = {det.has_pothole_model}")
+
         return det, True
+
     except Exception as exc:
-        print(f"[AI Bridge] ⚠  Could not load detector: {exc}")
+        print("=" * 60)
+        print("[AI Bridge] YOLO LOAD FAILED")
+        print(f"Exception: {exc}")
+        traceback.print_exc()
+        print("=" * 60)
+
         return None, False
 
 
