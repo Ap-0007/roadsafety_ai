@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Road Safety — City Simulation Dashboard</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet Heatmap -->
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+<style>
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #1c2333;
+  --border:   #21262d;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --accent:   #58a6ff;
+  --green:    #3fb950;
+  --yellow:   #d29922;
+  --orange:   #f0883e;
+  --red:      #f85149;
+  --purple:   #bc8cff;
+  --cyan:     #39d0d8;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+
+/* ── Layout ── */
+#shell    { display: flex; flex-direction: column; height: 100vh; }
+#header   { flex: 0 0 auto; }
+#body     { flex: 1 1 0; display: flex; overflow: hidden; }
+#map-wrap { flex: 1 1 0; position: relative; }
+#map      { position: absolute; inset: 0; }
+#sidebar  { flex: 0 0 370px; background: var(--surface);
+            border-left: 1px solid var(--border);
+            display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── Header ── */
+#header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 16px; display: flex; align-items: center; gap: 12px; height: 52px;
+}
+.logo-icon { font-size: 1.3rem; }
+#header h1 { font-size: 1rem; font-weight: 700; white-space: nowrap; }
+.badge { font-size: .65rem; background: var(--accent); color: #000;
+  padding: 2px 7px; border-radius: 999px; font-weight: 800; }
+#live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+  animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.5)} }
+
+.hs { flex: 1; }
+.ctrl-group { display: flex; gap: 6px; align-items: center; }
+.ctrl-label { font-size: .68rem; color: var(--muted); margin-right: 2px; }
+.btn { padding: 4px 10px; border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text); border-radius: 5px; cursor: pointer; font-size: .72rem;
+  font-weight: 600; transition: all .15s; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+#conn-badge { font-size: .72rem; color: var(--muted); }
+
+/* ── Map controls ── */
+#map-controls {
+  position: absolute; top: 12px; left: 12px; z-index: 999;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.map-btn { background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 12px; font-size: .72rem; font-weight: 600;
+  cursor: pointer; transition: all .15s; white-space: nowrap; }
+.map-btn:hover { border-color: var(--accent); }
+.map-btn.on { background: var(--accent); color: #000; border-color: var(--accent); }
+
+/* ── Sidebar tabs ── */
+#tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tab { flex: 1; padding: 10px 6px; text-align: center; font-size: .72rem;
+  font-weight: 600; cursor: pointer; color: var(--muted);
+  border-bottom: 2px solid transparent; transition: all .15s; }
+.tab.active { color: var(--accent); border-color: var(--accent); }
+
+/* ── Tab content ── */
+.tab-pane { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+.tab-pane.active { display: flex; }
+.scroll { overflow-y: auto; flex: 1; }
+.scroll::-webkit-scrollbar { width: 4px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Stat cards ── */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+.stat-card { background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; }
+.stat-card .val { font-size: 1.6rem; font-weight: 800; line-height: 1; }
+.stat-card .lbl { font-size: .65rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .5px; margin-top: 3px; }
+.stat-card .sub { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+.c-blue   .val { color: var(--accent); }
+.c-green  .val { color: var(--green); }
+.c-yellow .val { color: var(--yellow); }
+.c-orange .val { color: var(--orange); }
+.c-red    .val { color: var(--red); }
+.c-purple .val { color: var(--purple); }
+
+/* ── Section headers ── */
+.sec-hdr { font-size: .68rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .7px;
+  padding: 8px 12px 4px; border-top: 1px solid var(--border); }
+
+/* ── Network bar ── */
+.net-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+  margin: 4px 12px 8px; }
+.net-good   { background: var(--green); }
+.net-weak   { background: var(--yellow); }
+.net-none   { background: var(--red); }
+.net-legend { display: flex; gap: 12px; padding: 0 12px 8px;
+  font-size: .7rem; color: var(--muted); }
+.net-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 3px; }
+
+/* ── Verification bar ── */
+.ver-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+  margin: 4px 12px 8px; }
+.ver-unv  { background: var(--red); }
+.ver-part { background: var(--yellow); }
+.ver-full { background: var(--green); }
+.ver-legend { display: flex; gap: 10px; padding: 0 12px 8px;
+  font-size: .68rem; color: var(--muted); flex-wrap: wrap; }
+
+/* ── Alert feed ── */
+.alert-item { padding: 8px 12px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: flex-start; animation: fadein .4s; }
+@keyframes fadein { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+.alert-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.alert-msg  { font-size: .78rem; line-height: 1.4; }
+.alert-ts   { font-size: .65rem; color: var(--muted); margin-top: 2px; }
+.alert-item.critical { background: rgba(248,81,73,.07); border-left: 3px solid var(--red); }
+.alert-item.warning  { background: rgba(240,136,62,.07); border-left: 3px solid var(--orange); }
+.alert-item.success  { background: rgba(63,185,80,.07);  border-left: 3px solid var(--green); }
+.alert-item.info     { background: rgba(88,166,255,.07); border-left: 3px solid var(--accent); }
+
+/* ── Event list ── */
+.ev-item { padding: 8px 12px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.ev-item:hover { background: var(--surface2); }
+.ev-icon { font-size: 1.1rem; flex-shrink: 0; }
+.ev-info { flex: 1; min-width: 0; }
+.ev-name { font-size: .8rem; font-weight: 600; }
+.ev-sub  { font-size: .7rem; color: var(--muted); }
+.ev-right { text-align: right; flex-shrink: 0; }
+.sev-badge { font-size: .62rem; font-weight: 700; padding: 2px 6px;
+  border-radius: 999px; display: inline-block; }
+.sev-low      { background:#0d4429; color:#3fb950; }
+.sev-medium   { background:#3a1a00; color:#d29922; }
+.sev-high     { background:#3d1f00; color:#f0883e; }
+.sev-critical { background:#3d0b0b; color:#f85149; }
+.ver-chip { font-size: .6rem; color: var(--muted); margin-top: 2px; }
+.ver-chip.ver-full { color: var(--green); }
+.ver-chip.ver-part { color: var(--yellow); }
+
+/* ── Filter bar ── */
+.filter-bar { display: flex; gap: 4px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.filter-btn { padding: 3px 8px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--muted);
+  border-radius: 999px; font-size: .65rem; cursor: pointer; transition: all .15s; }
+.filter-btn.on { color: var(--text); border-color: var(--accent); background: rgba(88,166,255,.15); }
+
+/* ── Emergency panel ── */
+.emg-item { margin: 8px 12px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.emg-hdr { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+  background: rgba(248,81,73,.1); border-bottom: 1px solid var(--border); }
+.emg-type { font-size: .8rem; font-weight: 700; }
+.emg-by   { font-size: .68rem; color: var(--muted); }
+.emg-steps { padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.emg-step { display: flex; gap: 8px; align-items: center; font-size: .72rem; }
+.emg-step .dot { width: 10px; height: 10px; border-radius: 50%;
+  background: var(--border); flex-shrink: 0; transition: background .5s; }
+.emg-step.done .dot { background: var(--green); }
+.emg-step.active .dot { background: var(--orange); animation: pulse 1s infinite; }
+.emg-step .step-lbl { color: var(--muted); }
+.emg-step.done .step-lbl { color: var(--text); }
+
+/* ── Scalability table ── */
+.scale-table { width: 100%; border-collapse: collapse; font-size: .72rem; margin: 8px 0; }
+.scale-table th { color: var(--muted); font-weight: 600; text-align: left;
+  padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.scale-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); color: var(--text); }
+.scale-table tr.current { background: rgba(88,166,255,.08); }
+.scale-table td:first-child { font-weight: 700; color: var(--accent); }
+.metrics-wrap { padding: 8px 12px; }
+
+/* ── Detection tab ── */
+.det-scene-btn {
+  padding: 7px 6px; border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text); border-radius: 6px; cursor: pointer; font-size: .72rem;
+  font-weight: 600; transition: all .15s; text-align: left;
+}
+.det-scene-btn:hover { border-color: var(--accent); background: rgba(88,166,255,.1); }
+.det-scene-btn.running { border-color: var(--yellow); color: var(--yellow); }
+.det-chip {
+  font-size: .68rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  display: flex; align-items: center; gap: 4px;
+}
+.det-card-item {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 7px;
+  padding: 9px 11px; display: flex; justify-content: space-between; align-items: center;
+}
+.det-card-item.pothole       { border-left: 3px solid #f97316; }
+.det-card-item.accident      { border-left: 3px solid #ef4444; }
+.det-card-item.traffic_light { border-left: 3px solid #3fb950; }
+.det-card-item.pedestrian    { border-left: 3px solid #bc8cff; }
+.det-card-left .name { font-size: .8rem; font-weight: 600; }
+.det-card-left .conf { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+.conf-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 5px; width: 120px; }
+.conf-bar-fill { height: 100%; border-radius: 2px; }
+
+/* ── Bus tooltip ── */
+.bus-popup { font-size: .78rem; color: #111; }
+.bus-popup b { display: block; font-size: .85rem; margin-bottom: 4px; }
+
+/* ── Confidence bar ── */
+.conf-mini { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; }
+.conf-fill { height: 100%; border-radius: 2px; background: var(--green); }
+
+/* ── Loading ── */
+#loading { position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+  justify-content:center;flex-direction:column;gap:12px;z-index:9999; }
+.spin { width:40px;height:40px;border:3px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite; }
+@keyframes rot { to{transform:rotate(360deg)} }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spin"></div>
+  <div style="color:var(--muted);font-size:.85rem">Connecting to simulation…</div>
+</div>
+
+<div id="shell">
+
+  <!-- ═══ HEADER ═══ -->
+  <header id="header">
+    <div class="logo-icon">🛣️</div>
+    <h1>Road Safety City Simulation</h1>
+    <span class="badge">LIVE</span>
+    <div id="live-dot"></div>
+
+    <div class="hs"></div>
+
+    <!-- Scale control -->
+    <div class="ctrl-group">
+      <span class="ctrl-label">Scale:</span>
+      <button class="btn active" id="s100"   onclick="setScale(100)">100 buses</button>
+      <button class="btn"       id="s1000"  onclick="setScale(1000)">1K</button>
+      <button class="btn"       id="s10000" onclick="setScale(10000)">10K</button>
+    </div>
+
+    <!-- Speed control -->
+    <div class="ctrl-group" style="margin-left:10px">
+      <span class="ctrl-label">Speed:</span>
+      <button class="btn active" id="sp1" onclick="setSpeed(1)">1×</button>
+      <button class="btn"        id="sp2" onclick="setSpeed(2)">2×</button>
+      <button class="btn"        id="sp5" onclick="setSpeed(5)">5×</button>
+    </div>
+
+    <div id="conn-badge" style="margin-left:12px">⚫ connecting</div>
+
+    <!-- Authority Dashboard links -->
+    <div class="ctrl-group" style="margin-left:10px;gap:5px">
+      <span class="ctrl-label">Authority:</span>
+      <a href="/authority?auth=police"         target="_blank" class="btn" style="text-decoration:none">🚔</a>
+      <a href="/authority?auth=ambulance"       target="_blank" class="btn" style="text-decoration:none">🚑</a>
+      <a href="/authority?auth=road_authority"  target="_blank" class="btn" style="text-decoration:none">🚧</a>
+      <a href="/authority?auth=municipal"       target="_blank" class="btn" style="text-decoration:none">🏙️</a>
+    </div>
+
+    <!-- Presentation -->
+    <a href="/presentation" target="_blank" class="btn"
+       style="margin-left:10px;text-decoration:none;background:#1d4ed8;border-color:#3b82f6;color:#fff">
+      📊 Slides
+    </a>
+  </header>
+
+  <!-- ═══ BODY ═══ -->
+  <div id="body">
+
+    <!-- ─── MAP ─── -->
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div id="map-controls">
+        <button class="map-btn on"  id="tog-buses"   onclick="toggleLayer('buses')">🚌 Buses</button>
+        <button class="map-btn on"  id="tog-events"  onclick="toggleLayer('events')">📍 Events</button>
+        <button class="map-btn on"  id="tog-routes"  onclick="toggleLayer('routes')">🗺️ Routes</button>
+        <button class="map-btn"     id="tog-heat"    onclick="toggleLayer('heat')">🌡️ Heatmap</button>
+        <button class="map-btn"     id="tog-verify"  onclick="toggleLayer('verify')">✅ Verify Zones</button>
+      </div>
+    </div>
+
+    <!-- ─── SIDEBAR ─── -->
+    <div id="sidebar">
+      <div id="tabs">
+        <div class="tab active" onclick="showTab('live')">📊 Live</div>
+        <div class="tab"        onclick="showTab('events')">📍 Events</div>
+        <div class="tab"        onclick="showTab('emergency')">🚨 Emergency</div>
+        <div class="tab"        onclick="showTab('detect')">🤖 Detect</div>
+        <div class="tab"        onclick="showTab('scale')">📈 Scale</div>
+      </div>
+
+      <!-- ══ TAB: LIVE ══ -->
+      <div class="tab-pane active" id="pane-live">
+        <div class="scroll">
+          <!-- Stat cards -->
+          <div class="stat-grid">
+            <div class="stat-card c-blue">
+              <div class="val" id="s-buses">—</div>
+              <div class="lbl">Active Buses</div>
+              <div class="sub" id="s-uptime">uptime —</div>
+            </div>
+            <div class="stat-card c-green">
+              <div class="val" id="s-events">—</div>
+              <div class="lbl">Total Events</div>
+              <div class="sub" id="s-tput">— / min</div>
+            </div>
+            <div class="stat-card c-yellow">
+              <div class="val" id="s-verified">—</div>
+              <div class="lbl">Verified</div>
+              <div class="sub" id="s-partial">— partial</div>
+            </div>
+            <div class="stat-card c-red">
+              <div class="val" id="s-emg">—</div>
+              <div class="lbl">Emergencies</div>
+              <div class="sub" id="s-conf">avg conf —</div>
+            </div>
+          </div>
+
+          <!-- Verification progress -->
+          <div class="sec-hdr">Verification Pipeline</div>
+          <div class="ver-bar">
+            <div class="ver-unv"  id="vb-unv"  style="width:33%"></div>
+            <div class="ver-part" id="vb-part" style="width:33%"></div>
+            <div class="ver-full" id="vb-full" style="width:34%"></div>
+          </div>
+          <div class="ver-legend">
+            <span><span class="net-dot" style="background:var(--red)"></span>Unverified <b id="vl-unv">—</b></span>
+            <span><span class="net-dot" style="background:var(--yellow)"></span>Partial <b id="vl-part">—</b></span>
+            <span><span class="net-dot" style="background:var(--green)"></span>Verified <b id="vl-full">—</b></span>
+          </div>
+
+          <!-- Network status -->
+          <div class="sec-hdr">Network Status</div>
+          <div class="net-bar">
+            <div class="net-good" id="nb-good" style="width:70%"></div>
+            <div class="net-weak" id="nb-weak" style="width:20%"></div>
+            <div class="net-none" id="nb-none" style="width:10%"></div>
+          </div>
+          <div class="net-legend">
+            <span><span class="net-dot" style="background:var(--green)"></span>Good <b id="nl-good">—</b></span>
+            <span><span class="net-dot" style="background:var(--yellow)"></span>Weak <b id="nl-weak">—</b></span>
+            <span><span class="net-dot" style="background:var(--red)"></span>Offline <b id="nl-none">—</b></span>
+            <span style="margin-left:auto">Queued: <b id="nl-q">—</b></span>
+          </div>
+
+          <!-- Alert feed -->
+          <div class="sec-hdr">Live Alert Feed</div>
+          <div id="alert-feed"></div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: EVENTS ══ -->
+      <div class="tab-pane" id="pane-events">
+        <div class="filter-bar" id="filter-bar">
+          <button class="filter-btn on" data-f="all" onclick="setFilter('all')">All</button>
+          <button class="filter-btn" data-f="pothole" onclick="setFilter('pothole')">🕳️ Pothole</button>
+          <button class="filter-btn" data-f="accident" onclick="setFilter('accident')">🚗 Accident</button>
+          <button class="filter-btn" data-f="waterlogging" onclick="setFilter('waterlogging')">🌊 Water</button>
+          <button class="filter-btn" data-f="heavy_traffic" onclick="setFilter('heavy_traffic')">🚦 Traffic</button>
+          <button class="filter-btn" data-f="fallen_tree" onclick="setFilter('fallen_tree')">🌲 Tree</button>
+          <button class="filter-btn" data-f="roadblock" onclick="setFilter('roadblock')">🚧 Block</button>
+        </div>
+        <div class="scroll" id="ev-list"></div>
+      </div>
+
+      <!-- ══ TAB: EMERGENCY ══ -->
+      <div class="tab-pane" id="pane-emergency">
+        <div class="scroll" id="emg-list">
+          <div style="padding:24px;text-align:center;color:var(--muted);font-size:.82rem">
+            No active emergencies
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: DETECT ══ -->
+      <div class="tab-pane" id="pane-detect">
+        <div class="scroll" id="detect-scroll">
+
+          <!-- AI status bar -->
+          <div id="ai-status-bar" style="padding:8px 12px;font-size:.72rem;display:flex;
+            align-items:center;gap:6px;border-bottom:1px solid var(--border);background:var(--surface2)">
+            <span id="ai-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted)"></span>
+            <span id="ai-status-txt">Checking AI model…</span>
+          </div>
+
+          <!-- Sample scene buttons -->
+          <div style="padding:10px 12px 4px">
+            <div style="font-size:.68rem;color:var(--muted);margin-bottom:6px;
+              text-transform:uppercase;letter-spacing:.5px">Quick Demo Scenes</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+              <button class="det-scene-btn" onclick="loadSample(1)">🕳️ Pothole Road</button>
+              <button class="det-scene-btn" onclick="loadSample(2)">🚦 Traffic Light</button>
+              <button class="det-scene-btn" onclick="loadSample(3)">🚗 Accident Scene</button>
+              <button class="det-scene-btn" onclick="loadSample(4)">🌊 Waterlogging</button>
+              <button class="det-scene-btn" onclick="loadSample(5)" style="grid-column:span 2">🚦 Heavy Traffic Jam</button>
+            </div>
+          </div>
+
+          <!-- Upload -->
+          <div id="det-drop" onclick="document.getElementById('det-file').click()"
+            style="margin:8px 12px;border:2px dashed var(--border);border-radius:8px;
+            padding:14px;text-align:center;cursor:pointer;font-size:.75rem;color:var(--muted);
+            transition:all .2s">
+            📂 Drop your own road photo / video frame here
+          </div>
+          <input type="file" id="det-file" accept="image/*" style="display:none">
+
+          <!-- Processing indicator -->
+          <div id="det-loading" style="display:none;padding:12px;text-align:center">
+            <div class="spin" style="margin:0 auto 8px"></div>
+            <div style="font-size:.75rem;color:var(--muted)" id="det-loading-txt">Running AI detection…</div>
+          </div>
+
+          <!-- Image comparison viewer -->
+          <div id="det-viewer" style="display:none;padding:8px 12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+              <div>
+                <div style="font-size:.65rem;color:var(--muted);margin-bottom:3px">ORIGINAL</div>
+                <img id="det-orig" style="width:100%;border-radius:5px;border:1px solid var(--border)">
+              </div>
+              <div>
+                <div style="font-size:.65rem;color:var(--muted);margin-bottom:3px">AI ANNOTATED</div>
+                <img id="det-ann" style="width:100%;border-radius:5px;border:1px solid var(--accent)">
+              </div>
+            </div>
+
+            <!-- Detection summary chips -->
+            <div id="det-chips" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"></div>
+
+            <!-- Inject button -->
+            <button id="det-inject-btn" onclick="injectToSim()"
+              style="width:100%;padding:9px;background:#1f6feb;color:#fff;border:none;
+              border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;
+              transition:opacity .15s;display:none">
+              📍 Inject Detections → Live Simulation Map
+            </button>
+            <div id="inject-ok" style="display:none;font-size:.72rem;color:var(--green);
+              text-align:center;margin-top:5px;padding:5px;background:rgba(63,185,80,.1);
+              border-radius:5px"></div>
+          </div>
+
+          <!-- Detection cards list -->
+          <div id="det-cards" style="padding:0 12px 12px;display:flex;flex-direction:column;gap:5px"></div>
+
+        </div>
+      </div>
+
+      <!-- ══ TAB: SCALE ══ -->
+      <div class="tab-pane" id="pane-scale">
+        <div class="scroll">
+          <div class="sec-hdr" style="border-top:none">India-Wide Scalability Simulation</div>
+          <div class="metrics-wrap">
+            <table class="scale-table" id="scale-table">
+              <thead>
+                <tr>
+                  <th>Scale</th><th>Buses</th><th>Events/min</th>
+                  <th>API req/s</th><th>DB writes/s</th><th>Alert ms</th>
+                </tr>
+              </thead>
+              <tbody id="scale-tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="sec-hdr">Event Type Distribution</div>
+          <div id="type-bars" style="padding:8px 12px;display:flex;flex-direction:column;gap:5px"></div>
+
+          <div class="sec-hdr">Simulation Controls</div>
+          <div style="padding:8px 12px;display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:.75rem;color:var(--muted)">
+              Current scale: <b id="cur-scale" style="color:var(--accent)">100</b> buses<br>
+              Sim speed: <b id="cur-speed" style="color:var(--green)">1×</b><br>
+              Events generated: <b id="cur-evtctr" style="color:var(--text)">—</b>
+            </div>
+            <div style="font-size:.72rem;color:var(--muted);line-height:1.5">
+              At 10,000 buses:<br>
+              • ~1,200 events/min processed<br>
+              • Distributed across 10 shard DBs<br>
+              • WebSocket fan-out via Redis pub/sub<br>
+              • Edge AI reduces bandwidth by 85%
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /sidebar -->
+  </div><!-- /body -->
+</div><!-- /shell -->
+
+<script>
+// ══════════════════════════════════════════════════════
+// Map setup
+// ══════════════════════════════════════════════════════
+const map = L.map('map', { center:[28.62, 77.21], zoom:11, zoomControl:true });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  subdomains:'abcd', maxZoom:20
+}).addTo(map);
+
+// Layer groups
+const layers = {
+  buses:   L.layerGroup().addTo(map),
+  events:  L.layerGroup().addTo(map),
+  routes:  L.layerGroup().addTo(map),
+  heat:    null,   // created on first data
+  verify:  L.layerGroup(),
+};
+const layerOn = { buses:true, events:true, routes:true, heat:false, verify:false };
+
+// Marker registries
+const busMarkers   = {};   // bus_id → L.circleMarker
+const eventMarkers = {};   // event_id → L.circleMarker
+let   heatLayer    = null;
+
+// ══════════════════════════════════════════════════════
+// Route polylines (fetched once)
+// ══════════════════════════════════════════════════════
+fetch('/api/routes').then(r=>r.json()).then(data => {
+  data.routes.forEach(route => {
+    const latlngs = route.wp.map(p => [p[0],p[1]]);
+    L.polyline(latlngs, {
+      color: route.color, weight: 2, opacity: 0.45,
+      dashArray: '6,4'
+    }).bindTooltip(route.name, {sticky:true}).addTo(layers.routes);
+  });
+});
+
+// ══════════════════════════════════════════════════════
+// Event color map
+// ══════════════════════════════════════════════════════
+const EV_COLOR = {
+  pothole:'#f97316', road_crack:'#a78bfa', accident:'#ef4444',
+  waterlogging:'#3b82f6', heavy_traffic:'#eab308', fallen_tree:'#22c55e',
+  roadblock:'#f43f5e', animal_crossing:'#84cc16',
+};
+const SEV_RADIUS = { low:7, medium:9, high:12, critical:15 };
+
+// ══════════════════════════════════════════════════════
+// WebSocket
+// ══════════════════════════════════════════════════════
+let ws, wsReconnTimer, lastState = null;
+const connBadge = document.getElementById('conn-badge');
+
+function connect() {
+  const proto = location.protocol==='https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    connBadge.textContent = '🟢 connected';
+    connBadge.style.color = '#3fb950';
+    document.getElementById('loading').style.display = 'none';
+    clearTimeout(wsReconnTimer);
+  };
+  ws.onclose = () => {
+    connBadge.textContent = '🔴 reconnecting…';
+    connBadge.style.color = '#f85149';
+    wsReconnTimer = setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = e => { try { onState(JSON.parse(e.data)); } catch(_){} };
+}
+connect();
+
+// ══════════════════════════════════════════════════════
+// Main state handler
+// ══════════════════════════════════════════════════════
+let evFilter = 'all';
+
+function onState(s) {
+  lastState = s;
+  updateStats(s.stats);
+  updateBuses(s.buses);
+  updateEvents(s.events, s.stats);
+  updateAlerts(s.alerts);
+  updateEmergency(s.events);
+  updateScale(s.stats);
+  if (layerOn.heat) updateHeat(s.events);
+}
+
+// ─── Stats ───────────────────────────────────────────
+function updateStats(st) {
+  setText('s-buses',   st.active_buses.toLocaleString());
+  setText('s-events',  st.total_events.toLocaleString());
+  setText('s-verified',st.verified.toLocaleString());
+  setText('s-emg',     st.emergencies.toLocaleString());
+  setText('s-uptime',  `uptime ${fmtUptime(st.uptime_s)}`);
+  setText('s-tput',    `${st.tput_per_min}/min`);
+  setText('s-partial', `${st.partial} partial`);
+  setText('s-conf',    `avg conf ${(st.avg_conf*100).toFixed(0)}%`);
+  setText('cur-scale', st.scale_mode.toLocaleString());
+  setText('cur-speed', `${st.sim_speed}×`);
+  setText('cur-evtctr',st.total_events.toLocaleString());
+
+  // Verification bar
+  const total = (st.unverified||1) + (st.partial||0) + (st.verified||0);
+  setW('vb-unv',  st.unverified/total);
+  setW('vb-part', st.partial/total);
+  setW('vb-full', st.verified/total);
+  setText('vl-unv',  st.unverified);
+  setText('vl-part', st.partial);
+  setText('vl-full', st.verified);
+
+  // Network bar
+  const nb = 100;
+  const ng = st.net_good, nw = st.net_weak, nn = st.net_none;
+  const nt = Math.max(ng+nw+nn, 1);
+  setW('nb-good', ng/nt); setW('nb-weak', nw/nt); setW('nb-none', nn/nt);
+  setText('nl-good', ng); setText('nl-weak', nw); setText('nl-none', nn);
+  setText('nl-q', st.offline_queued);
+}
+
+// ─── Buses on map ───────────────────────────────────
+function updateBuses(buses) {
+  const seen = new Set();
+  buses.forEach(b => {
+    seen.add(b.id);
+    const ll = [b.lat, b.lng];
+    const net_outline = b.network==='none'?'#f85149': b.network==='weak'?'#d29922':'#3fb950';
+    if (busMarkers[b.id]) {
+      busMarkers[b.id].setLatLng(ll)
+        .setStyle({ color: net_outline });
+    } else {
+      const m = L.circleMarker(ll, {
+        radius: 5, fillColor: b.color, fillOpacity: 0.85,
+        color: net_outline, weight: 2,
+      }).bindPopup(() => busPopup(b), {maxWidth:220});
+      m._busData = b;
+      m.addTo(layers.buses);
+      busMarkers[b.id] = m;
+    }
+    busMarkers[b.id]._busData = b;
+  });
+  // Remove stale
+  Object.keys(busMarkers).forEach(id => {
+    if (!seen.has(id)) { layers.buses.removeLayer(busMarkers[id]); delete busMarkers[id]; }
+  });
+}
+
+function busPopup(b) {
+  const net_emoji = b.network==='good'?'📶':b.network==='weak'?'📡':'❌';
+  return `<div class="bus-popup"><b>🚌 ${b.id}</b>
+    Route ${b.route} &nbsp;|&nbsp; ${b.speed.toFixed(0)} km/h<br>
+    Network: ${net_emoji} ${b.network}&nbsp;&nbsp;Queued: ${b.queued}</div>`;
+}
+
+// ─── Events on map ──────────────────────────────────
+function updateEvents(events, stats) {
+  const seen = new Set();
+  events.forEach(e => {
+    seen.add(e.id);
+    const color = EV_COLOR[e.type] || '#888';
+    const r = SEV_RADIUS[e.severity] || 8;
+    const opacity = e.verification==='fully_verified' ? 0.9 :
+                    e.verification==='partially_verified' ? 0.65 : 0.40;
+    if (eventMarkers[e.id]) {
+      eventMarkers[e.id].setStyle({ fillOpacity: opacity });
+    } else {
+      const m = L.circleMarker([e.lat, e.lng], {
+        radius: r, fillColor: color, fillOpacity: opacity,
+        color: '#fff', weight: 1,
+      }).bindPopup(evPopup(e), {maxWidth:260});
+      m.addTo(layers.events);
+      eventMarkers[e.id] = m;
+    }
+  });
+  Object.keys(eventMarkers).forEach(id => {
+    if (!seen.has(id)) { layers.events.removeLayer(eventMarkers[id]); delete eventMarkers[id]; }
+  });
+
+  // Update event list
+  updateEvList(events);
+
+  // Type distribution bars
+  if (stats.by_type) updateTypeBars(stats.by_type);
+}
+
+function evPopup(e) {
+  const tl = (e.timeline||[]).map(t =>
+    `<div style="font-size:.7rem;color:#555;margin-top:3px">${fmtTs(t.ts)} — ${t.msg}</div>`
+  ).join('');
+  return `<div style="font-size:.78rem;min-width:200px">
+    <b>${e.icon} ${e.type.replace(/_/g,' ').toUpperCase()}</b>
+    <div style="margin:4px 0">Severity: <b>${e.severity}</b> &nbsp; Conf: <b>${(e.confidence*100).toFixed(0)}%</b></div>
+    <div>By: ${e.detected_by} &nbsp; ${fmtAgo(e.age_s)}</div>
+    <div style="margin-top:4px">Verification: <b>${e.verification.replace(/_/g,' ')}</b> (${e.verifier_count} verifiers)</div>
+    ${e.emergency ? `<div style="color:#f85149;margin-top:4px">🚨 Emergency: ${e.emergency.replace(/_/g,' ')}</div>` : ''}
+    <div style="margin-top:6px;border-top:1px solid #eee;padding-top:4px">${tl}</div>
+  </div>`;
+}
+
+// ─── Event list ─────────────────────────────────────
+function updateEvList(events) {
+  const filtered = evFilter==='all' ? events : events.filter(e=>e.type===evFilter);
+  const html = filtered.slice(0,80).map(e => {
+    const vc = e.verifier_count;
+    const vs = e.verification==='fully_verified'?'ver-full':
+               e.verification==='partially_verified'?'ver-part':'';
+    const age = fmtAgo(e.age_s);
+    return `<div class="ev-item" onclick="flyTo(${e.lat},${e.lng})">
+      <div class="ev-icon">${e.icon}</div>
+      <div class="ev-info">
+        <div class="ev-name">${e.type.replace(/_/g,' ')}</div>
+        <div class="ev-sub">${e.detected_by} · ${age}</div>
+        <div class="conf-mini"><div class="conf-fill" style="width:${e.confidence*100}%;background:${EV_COLOR[e.type]||'#888'}"></div></div>
+      </div>
+      <div class="ev-right">
+        <div class="sev-badge sev-${e.severity}">${e.severity}</div>
+        <div class="ver-chip ${vs}">${vc>0?'✓'.repeat(Math.min(vc+1,3)):''} ${e.verification.replace(/_/g,' ')}</div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('ev-list').innerHTML = html ||
+    '<div style="padding:20px;text-align:center;color:var(--muted);font-size:.8rem">No events match filter</div>';
+}
+
+// ─── Alert feed ─────────────────────────────────────
+let lastAlertTs = 0;
+function updateAlerts(alerts) {
+  const feed = document.getElementById('alert-feed');
+  const newAlerts = alerts.filter(a => a.ts > lastAlertTs);
+  if (newAlerts.length === 0 && feed.children.length > 0) return;
+
+  const html = alerts.slice(0,20).map(a => {
+    const lvl = a.level || 'info';
+    const icon = lvl==='critical'?'🚨': lvl==='warning'?'⚠️': lvl==='success'?'✅':'📡';
+    return `<div class="alert-item ${lvl}">
+      <div class="alert-icon">${icon}</div>
+      <div>
+        <div class="alert-msg">${a.msg}</div>
+        <div class="alert-ts">${fmtTs(a.ts)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  feed.innerHTML = html;
+  if (newAlerts.length > 0) lastAlertTs = alerts[0].ts;
+}
+
+// ─── Emergency panel ────────────────────────────────
+const EMG_STEP_DEFS = [
+  {key:'pending',            label:'Alert generated'},
+  {key:'police_notified',    label:'Police dispatched'},
+  {key:'ambulance_notified', label:'Ambulance en route'},
+  {key:'authority_notified', label:'Road authority alerted'},
+  {key:'resolved',           label:'Incident resolved'},
+];
+const EMG_ORDER = EMG_STEP_DEFS.map(s=>s.key);
+
+function updateEmergency(events) {
+  const emg = events.filter(e=>e.emergency && e.emergency!=='resolved');
+  const el   = document.getElementById('emg-list');
+  if (emg.length===0) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:.82rem">No active emergencies</div>';
+    return;
+  }
+  el.innerHTML = emg.map(e => {
+    const curIdx = EMG_ORDER.indexOf(e.emergency);
+    const steps  = EMG_STEP_DEFS.map((s,i) => {
+      const cls = i<curIdx?'done': i===curIdx?'active':'';
+      return `<div class="emg-step ${cls}">
+        <div class="dot"></div>
+        <div class="step-lbl">${s.label}</div>
+      </div>`;
+    }).join('');
+    return `<div class="emg-item">
+      <div class="emg-hdr">
+        <div class="emg-type">🚨 ${e.type.replace(/_/g,' ').toUpperCase()} — ${e.severity}</div>
+        <div class="emg-by">${e.detected_by}</div>
+      </div>
+      <div class="emg-steps">${steps}</div>
+      <div style="padding:4px 12px 8px;font-size:.68rem;color:var(--muted)">
+        ${(e.timeline||[]).slice(-3).map(t=>`${fmtTs(t.ts)} ${t.msg}`).join('<br>')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Scale metrics table ────────────────────────────
+function updateScale(st) {
+  const sm = st.scale_metrics || {};
+  const tbody = document.getElementById('scale-tbody');
+  tbody.innerHTML = [100,1000,10000].map(k => {
+    const m = sm[k] || {};
+    const cur = k === st.scale_mode ? 'class="current"' : '';
+    return `<tr ${cur}>
+      <td>${k>=10000?'10K':k>=1000?'1K':k}</td>
+      <td>${(m.buses||k).toLocaleString()}</td>
+      <td>${(m.events_min||0).toLocaleString()}</td>
+      <td>${m.api_rps||'—'}</td>
+      <td>${m.db_writes||'—'}</td>
+      <td>${m.alert_ms||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateTypeBars(by_type) {
+  const total = Object.values(by_type).reduce((a,b)=>a+b,0)||1;
+  const sorted = Object.entries(by_type).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('type-bars').innerHTML = sorted.map(([t,v]) =>
+    `<div>
+      <div style="display:flex;justify-content:space-between;font-size:.7rem;margin-bottom:2px">
+        <span>${_ICONS[t]||'📍'} ${t.replace(/_/g,' ')}</span>
+        <span style="color:var(--muted)">${v}</span>
+      </div>
+      <div style="height:5px;background:var(--border);border-radius:3px">
+        <div style="height:100%;width:${Math.min(v/total*100,100).toFixed(1)}%;background:${EV_COLOR[t]||'#888'};border-radius:3px"></div>
+      </div>
+    </div>`
+  ).join('');
+}
+
+const _ICONS = {
+  pothole:'🕳️',road_crack:'〰️',accident:'🚗',waterlogging:'🌊',
+  heavy_traffic:'🚦',fallen_tree:'🌲',roadblock:'🚧',animal_crossing:'🐄',
+};
+
+// ─── Heatmap ─────────────────────────────────────────
+function updateHeat(events) {
+  const pts = events.filter(e=>['pothole','accident','road_crack'].includes(e.type))
+    .map(e=>[e.lat, e.lng, e.confidence]);
+  if (!heatLayer) {
+    heatLayer = L.heatLayer(pts, {radius:25, blur:15, maxZoom:13}).addTo(map);
+  } else {
+    heatLayer.setLatLngs(pts);
+  }
+}
+
+// ── Verification circles (layer)
+function refreshVerifyZones(events) {
+  layers.verify.clearLayers();
+  events.filter(e=>e.verification!=='unverified').forEach(e=>{
+    L.circle([e.lat,e.lng],{
+      radius:65, color:e.verification==='fully_verified'?'#3fb950':'#d29922',
+      fillOpacity:0.05, weight:1, dashArray:'4,4'
+    }).addTo(layers.verify);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// Controls
+// ══════════════════════════════════════════════════════
+function setScale(n) {
+  fetch(`/api/scale/${n}`, {method:'POST'});
+  ['s100','s1000','s10000'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById(`s${n}`).classList.add('active');
+}
+
+function setSpeed(x) {
+  fetch(`/api/speed/${x}`, {method:'POST'});
+  ['sp1','sp2','sp5'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById(`sp${x}`).classList.add('active');
+}
+
+function toggleLayer(name) {
+  const btn = document.getElementById(`tog-${name}`);
+  layerOn[name] = !layerOn[name];
+  btn.classList.toggle('on', layerOn[name]);
+  if (layerOn[name]) {
+    if (name==='heat') {
+      if (heatLayer) map.addLayer(heatLayer);
+      else if (lastState) updateHeat(lastState.events);
+    } else if (name==='verify') {
+      map.addLayer(layers.verify);
+      if (lastState) refreshVerifyZones(lastState.events);
+    } else {
+      map.addLayer(layers[name]);
+    }
+  } else {
+    if (name==='heat' && heatLayer) map.removeLayer(heatLayer);
+    else if (name==='verify') map.removeLayer(layers.verify);
+    else map.removeLayer(layers[name]);
+  }
+}
+
+function showTab(name) {
+  const names = ['live','events','emergency','detect','scale'];
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active', names[i]===name);
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(`pane-${name}`).classList.add('active');
+}
+
+function setFilter(f) {
+  evFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b=>{
+    b.classList.toggle('on', b.dataset.f===f);
+  });
+  if (lastState) updateEvList(lastState.events);
+}
+
+function flyTo(lat, lng) {
+  map.flyTo([lat,lng], 15, {duration:0.8});
+}
+
+// ══════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(val)) el.textContent = val;
+}
+function setW(id, ratio) {
+  const el = document.getElementById(id);
+  if (el) el.style.width = `${Math.max(0,Math.min(100,ratio*100)).toFixed(1)}%`;
+}
+function fmtUptime(s) {
+  if (s<60) return `${s}s`;
+  if (s<3600) return `${Math.floor(s/60)}m ${s%60}s`;
+  return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+}
+function fmtTs(ts) {
+  return new Date(ts*1000).toLocaleTimeString();
+}
+function fmtAgo(s) {
+  if (s<60) return `${s}s ago`;
+  if (s<3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
+}
+
+// ══════════════════════════════════════════════════════
+// Detection tab logic
+// ══════════════════════════════════════════════════════
+
+let _lastDetResult = null;   // store for inject
+
+// Check AI status on load
+fetch('/api/health').then(r=>r.json()).then(h => {
+  const dot = document.getElementById('ai-dot');
+  const txt = document.getElementById('ai-status-txt');
+  if (h.ai_available) {
+    dot.style.background = '#3fb950';
+    txt.textContent = '🤖 YOLOv8s + CV active — real detections enabled';
+    txt.style.color = '#3fb950';
+  } else {
+    dot.style.background = '#d29922';
+    txt.textContent = '⚠ YOLOv8 not loaded — CV-only mode';
+    txt.style.color = '#d29922';
+  }
+}).catch(()=>{});
+
+// Drag-drop on upload zone
+const detDrop = document.getElementById('det-drop');
+detDrop.addEventListener('dragover', e => { e.preventDefault(); detDrop.style.borderColor='var(--accent)'; });
+detDrop.addEventListener('dragleave', () => detDrop.style.borderColor='');
+detDrop.addEventListener('drop', e => {
+  e.preventDefault(); detDrop.style.borderColor='';
+  if (e.dataTransfer.files[0]) runDetectionFile(e.dataTransfer.files[0]);
+});
+document.getElementById('det-file').addEventListener('change', e => {
+  if (e.target.files[0]) runDetectionFile(e.target.files[0]);
+});
+
+async function loadSample(n) {
+  const btn = document.querySelectorAll('.det-scene-btn')[n-1];
+  btn.classList.add('running');
+  setDetLoading(true, `Running AI on scene ${n}…`);
+  try {
+    const res = await fetch(`/api/detect/sample/${n}`);
+    if (!res.ok) throw new Error(await res.text());
+    renderDetResult(await res.json());
+  } catch(e) {
+    alert('Detection error: ' + e.message);
+  } finally {
+    setDetLoading(false);
+    btn.classList.remove('running');
+  }
+}
+
+async function runDetectionFile(file) {
+  setDetLoading(true, 'Uploading & running AI detection…');
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const res = await fetch('/api/detect/image', {method:'POST', body:fd});
+    if (!res.ok) throw new Error(await res.text());
+    renderDetResult(await res.json());
+  } catch(e) {
+    alert('Detection error: ' + e.message);
+  } finally {
+    setDetLoading(false);
+  }
+}
+
+function renderDetResult(data) {
+  _lastDetResult = data;
+
+  // Show viewer
+  document.getElementById('det-viewer').style.display = 'block';
+  document.getElementById('det-orig').src = 'data:image/jpeg;base64,' + data.original_b64;
+  document.getElementById('det-ann').src  = 'data:image/jpeg;base64,' + data.annotated_b64;
+
+  // Summary chips
+  const s = data.summary || {};
+  const chips = [
+    [s.potholes,  '#f97316', '🕳️ Potholes'],
+    [s.accidents, '#ef4444', '🚗 Accidents'],
+    [s.lights,    '#3fb950', '🚦 Lights'],
+    [s.peds,      '#bc8cff', '🚶 Pedestrians'],
+    [s.critical,  '#f85149', '🔴 Critical'],
+  ].filter(([v])=> v>0);
+
+  document.getElementById('det-chips').innerHTML =
+    chips.map(([v,c,l])=>`<div class="det-chip" style="background:${c}22;color:${c};border:1px solid ${c}44">
+      ${l} <b>${v}</b></div>`).join('') ||
+    '<div style="font-size:.72rem;color:var(--muted)">No hazards detected in this scene</div>';
+
+  // Model info
+  const sceneLabel = data.scene_name ? ` — ${data.scene_name}` : '';
+  document.getElementById('det-chips').innerHTML +=
+    `<div style="font-size:.62rem;color:var(--muted);width:100%;margin-top:2px">
+      Model: ${data.model}${sceneLabel}</div>`;
+
+  // Inject button
+  const injBtn = document.getElementById('det-inject-btn');
+  injBtn.style.display = data.detections.length > 0 ? 'block' : 'none';
+  document.getElementById('inject-ok').style.display = 'none';
+
+  // Detection cards
+  const cards = document.getElementById('det-cards');
+  if (!data.detections.length) {
+    cards.innerHTML = '<div style="font-size:.78rem;color:var(--muted);text-align:center;padding:12px">No hazards detected</div>';
+    return;
+  }
+  const EVC = {pothole:'#f97316',road_crack:'#a78bfa',accident:'#ef4444',
+               waterlogging:'#3b82f6',heavy_traffic:'#eab308',fallen_tree:'#22c55e',
+               roadblock:'#f43f5e',animal_crossing:'#84cc16',
+               traffic_light:'#3fb950',pedestrian:'#bc8cff'};
+
+  cards.innerHTML = data.detections.map(d => {
+    const c = EVC[d.category] || '#888';
+    const pct = Math.round(d.confidence * 100);
+    const name = d.class_name.replace(/_/g,' ');
+    return `<div class="det-card-item ${d.category}">
+      <div class="det-card-left">
+        <div class="name">${d.icon||'📍'} ${name}</div>
+        <div class="conf">${pct}% confidence</div>
+        <div class="conf-bar">
+          <div class="conf-bar-fill" style="width:${pct}%;background:${c}"></div>
+        </div>
+      </div>
+      <div>
+        <div class="sev-badge sev-${d.severity}" style="margin-bottom:4px">${d.severity}</div>
+        <div style="font-size:.62rem;color:var(--muted)">${d.category}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Also add detection marker on map (at a random bus location)
+  if (lastState && lastState.buses.length > 0) {
+    const bus = lastState.buses[Math.floor(Math.random() * Math.min(lastState.buses.length, 5))];
+    addDetectionPing(bus.lat, bus.lng, data.detections[0]);
+  }
+}
+
+function addDetectionPing(lat, lng, det) {
+  // Flash a temporary detection pulse on the map
+  const c = {pothole:'#f97316',accident:'#ef4444',traffic_light:'#3fb950'}[det?.category] || '#58a6ff';
+  const pulse = L.circleMarker([lat, lng], {
+    radius:18, fillColor:c, fillOpacity:0.25, color:c, weight:2
+  }).addTo(map);
+  setTimeout(() => map.removeLayer(pulse), 4000);
+  L.circleMarker([lat, lng], {
+    radius:7, fillColor:c, fillOpacity:0.9, color:'#fff', weight:1.5
+  }).bindPopup(`<b>🤖 AI Detection</b><br>${det?.class_name?.replace(/_/g,' ')} — ${det?.severity}`).addTo(layers.events).openPopup();
+}
+
+async function injectToSim() {
+  if (!_lastDetResult || !_lastDetResult.detections.length) return;
+  const btn = document.getElementById('det-inject-btn');
+  btn.textContent = '⏳ Injecting…'; btn.disabled = true;
+
+  // Inject the most severe detection
+  const det = _lastDetResult.detections.sort((a,b) => {
+    const sevOrd = {critical:4,high:3,medium:2,low:1};
+    return (sevOrd[b.severity]||0) - (sevOrd[a.severity]||0);
+  })[0];
+
+  try {
+    const res = await fetch('/api/detect/inject', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        event_type: det.category==='traffic_light' ? 'roadblock' : det.category,
+        severity:   det.severity,
+        confidence: det.confidence,
+      })
+    });
+    const data = await res.json();
+    const ok = document.getElementById('inject-ok');
+    ok.style.display = 'block';
+    ok.textContent = `✅ Injected as ${data.event_id} at ${data.bus} → visible on map!`;
+    btn.textContent = '📍 Inject Detections → Live Simulation Map';
+    btn.disabled = false;
+
+    // Fly map to the injected location
+    if (data.lat && data.lng) {
+      showTab('live');
+      setTimeout(() => flyTo(data.lat, data.lng), 300);
+    }
+  } catch(e) {
+    btn.textContent = '📍 Inject Detections → Live Simulation Map';
+    btn.disabled = false;
+  }
+}
+
+function setDetLoading(v, msg='') {
+  document.getElementById('det-loading').style.display = v ? 'block' : 'none';
+  document.getElementById('det-loading-txt').textContent = msg;
+  if (v) {
+    document.getElementById('det-viewer').style.display = 'none';
+    document.getElementById('det-cards').innerHTML = '';
+    document.getElementById('det-chips').innerHTML = '';
+  }
+}
+</script>
+</body>
+</html>
