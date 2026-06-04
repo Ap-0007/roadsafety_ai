@@ -83,11 +83,11 @@ class FrameResult:
 
 
 class RoadHazardDetector:
-    def __init__(self, pothole_model_path: Optional[str] = None, model_size: str = "s"):
+    def __init__(self, pothole_model_path: Optional[str] = None, model_size: str = "n"):
 
         from pathlib import Path
 
-        model_file = Path(__file__).resolve().parent.parent / "yolov8s.pt"
+        model_file = Path(__file__).resolve().parent.parent / "yolov8n.pt"
 
         print(f"[Detector] Loading model from: {model_file}")
         print(f"[Detector] Exists: {model_file.exists()}")
