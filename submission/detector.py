@@ -87,12 +87,12 @@ class RoadHazardDetector:
 
         from pathlib import Path
 
-        model_file = Path(__file__).resolve().parent.parent / "yolov8n.pt"
+        model_file = Path(__file__).resolve().parent / "yolov8n.pt"
 
         print(f"[Detector] Loading model from: {model_file}")
         print(f"[Detector] Exists: {model_file.exists()}")
 
-        self.general_model = YOLO(str(model_file))
+        self.general_model = None
 
         self.pothole_model: Optional[YOLO] = None
         if pothole_model_path and Path(pothole_model_path).exists():
@@ -213,26 +213,64 @@ class RoadHazardDetector:
     # ------------------------------------------------------------------ #
 
     def _run_yolo(self, frame: np.ndarray) -> dict:
-        results = self.general_model(frame, verbose=False, conf=0.30)[0]
-        vehicles, people, traffic_lights, bicycles = [], [], [], []
+
+        if self.general_model is None:
+            model_file = Path(__file__).resolve().parent.parent / "yolov8n.pt"
+
+            print(f"[Detector] Lazy loading {model_file}")
+            print(f"[Detector] Exists: {model_file.exists()}")
+
+            self.general_model = YOLO(str(model_file))
+
+        results = self.general_model(
+            frame,
+            verbose=False,
+            conf=0.30
+        )[0]
+
+        vehicles = []
+        people = []
+        traffic_lights = []
+        bicycles = []
 
         for box in results.boxes:
             cls_id = int(box.cls[0])
-            conf   = float(box.conf[0])
-            bbox   = [float(c) for c in box.xyxy[0]]
+            conf = float(box.conf[0])
+            bbox = [float(c) for c in box.xyxy[0]]
 
             if cls_id in _VEHICLE_IDS:
-                vehicles.append({"bbox": bbox, "cls": _VEHICLE_IDS[cls_id], "conf": conf})
+                vehicles.append({
+                    "bbox": bbox,
+                    "cls": _VEHICLE_IDS[cls_id],
+                    "conf": conf
+                })
+
             elif cls_id == _PERSON_ID:
-                people.append({"bbox": bbox, "conf": conf})
+                people.append({
+                    "bbox": bbox,
+                    "conf": conf
+                })
+
             elif cls_id == _TLIGHT_ID:
                 state = self._estimate_light_state(frame, bbox)
-                traffic_lights.append({"bbox": bbox, "conf": conf, "state": state})
-            elif cls_id == _BICYCLE_ID:
-                bicycles.append({"bbox": bbox, "conf": conf})
+                traffic_lights.append({
+                    "bbox": bbox,
+                    "conf": conf,
+                    "state": state
+                })
 
-        return {"vehicles": vehicles, "people": people,
-                "traffic_lights": traffic_lights, "bicycles": bicycles}
+            elif cls_id == _BICYCLE_ID:
+                bicycles.append({
+                    "bbox": bbox,
+                    "conf": conf
+                })
+
+        return {
+            "vehicles": vehicles,
+            "people": people,
+            "traffic_lights": traffic_lights,
+            "bicycles": bicycles
+        }
 
     # ------------------------------------------------------------------ #
     #  Traffic analysis                                                    #
@@ -243,10 +281,10 @@ class RoadHazardDetector:
         pc = len(raw["people"])
         bc = len(raw["bicycles"])
 
-        if vc <= 2:   density, score = "low",      min(vc / 3, 1.0)
-        elif vc <= 5: density, score = "moderate",  vc / 6
-        elif vc <= 10:density, score = "heavy",     vc / 11
-        else:         density, score = "gridlock",  1.0
+        if vc <= 2:    density, score = "low",      min(vc / 3, 1.0)
+        elif vc <= 5:  density, score = "moderate",  vc / 6
+        elif vc <= 10: density, score = "heavy",     vc / 11
+        else:          density, score = "gridlock",  1.0
 
         advice = {
             "low":      "Road is clear.",
@@ -278,11 +316,11 @@ class RoadHazardDetector:
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
 
         # HSV masks for each light color
-        red_lo  = cv2.inRange(hsv, (0,   120, 100), (10,  255, 255))
-        red_hi  = cv2.inRange(hsv, (160, 120, 100), (180, 255, 255))
-        red_m   = cv2.bitwise_or(red_lo, red_hi)
-        yellow_m= cv2.inRange(hsv, (18,  120, 100), (35,  255, 255))
-        green_m = cv2.inRange(hsv, (40,  80,  80),  (90,  255, 255))
+        red_lo   = cv2.inRange(hsv, (0,   120, 100), (10,  255, 255))
+        red_hi   = cv2.inRange(hsv, (160, 120, 100), (180, 255, 255))
+        red_m    = cv2.bitwise_or(red_lo, red_hi)
+        yellow_m = cv2.inRange(hsv, (18,  120, 100), (35,  255, 255))
+        green_m  = cv2.inRange(hsv, (40,  80,  80),  (90,  255, 255))
 
         counts = {
             "red":    int(red_m.sum()),
@@ -389,13 +427,13 @@ class RoadHazardDetector:
         roi = frame[roi_y:, :]
         rh, rw = roi.shape[:2]
 
-        gray     = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blurred  = cv2.GaussianBlur(gray, (13, 13), 0)
+        gray    = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (13, 13), 0)
 
         # Adaptive threshold — handles varied lighting
-        adapt    = cv2.adaptiveThreshold(blurred, 255,
-                                         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                         cv2.THRESH_BINARY_INV, 51, 8)
+        adapt = cv2.adaptiveThreshold(blurred, 255,
+                                      cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                      cv2.THRESH_BINARY_INV, 51, 8)
 
         # Fixed threshold catches very dark pixels (deep potholes)
         _, fixed = cv2.threshold(blurred, 70, 255, cv2.THRESH_BINARY_INV)
@@ -403,12 +441,12 @@ class RoadHazardDetector:
         combined = cv2.bitwise_or(adapt, fixed)
 
         # Morphological cleanup
-        kernel   = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-        cleaned  = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel)
-        cleaned  = cv2.morphologyEx(cleaned,  cv2.MORPH_OPEN,  kernel)
+        kernel  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        cleaned = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel)
+        cleaned = cv2.morphologyEx(cleaned,  cv2.MORPH_OPEN,  kernel)
 
-        cnts, _  = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        out      = []
+        cnts, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        out     = []
 
         for cnt in cnts:
             area = cv2.contourArea(cnt)
@@ -471,7 +509,7 @@ class RoadHazardDetector:
         rh, rw = roi.shape[:2]
         if rh < 10 or rw < 10:
             return out
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        hsv    = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
         hue_ch = hsv[:, :, 0].astype(np.int32)
         sat_ch = hsv[:, :, 1]
         val_ch = hsv[:, :, 2]
@@ -580,9 +618,9 @@ class RoadHazardDetector:
 
     @staticmethod
     def _area_severity(ratio: float) -> str:
-        if ratio > 0.05:   return "critical"
-        if ratio > 0.02:   return "high"
-        if ratio > 0.005:  return "medium"
+        if ratio > 0.05:  return "critical"
+        if ratio > 0.02:  return "high"
+        if ratio > 0.005: return "medium"
         return "low"
 
     @staticmethod
