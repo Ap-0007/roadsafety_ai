@@ -23,7 +23,7 @@ import numpy as np
 # Detector bootstrap
 # ─────────────────────────────────────────────────────────────
 
-_AI_DIR = Path(__file__).parent.parent / "roadsafety_ai"
+_AI_DIR = Path(__file__).parent
 
 
 def _load_detector():
