@@ -298,10 +298,14 @@ class SimEngine:
     # ──── Verification ───────────────────────────────────────
 
     def _check_verification(self, bus: Bus, now: float):
+        # 1 degree is approx 111km. We use 100km for a safe bounding box.
+        eps = self.VERIFY_M / 100000.0
         for ev in self.events.values():
             if ev.verification == "fully_verified":
                 continue
             if bus.bus_id == ev.detected_by or bus.bus_id in ev.verifiers:
+                continue
+            if abs(bus.lat - ev.lat) > eps or abs(bus.lng - ev.lng) > eps:
                 continue
             dist_m = _hav((bus.lat, bus.lng), (ev.lat, ev.lng)) * 1000
             if dist_m <= self.VERIFY_M:
