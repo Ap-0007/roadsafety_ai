@@ -7,6 +7,7 @@ import asyncio
 import base64
 import io
 import json
+import os
 import time
 import random
 from contextlib import asynccontextmanager
@@ -124,7 +125,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Road Safety Simulation + Detection", version="2.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
+
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:8000,https://roadsafety-ai.onrender.com").split(",")
+
+app.add_middleware(CORSMiddleware, allow_origins=allowed_origins,
                    allow_methods=["*"], allow_headers=["*"])
 
 if Path("static").exists():
