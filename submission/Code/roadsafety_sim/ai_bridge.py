@@ -10,7 +10,6 @@ AI Bridge — shared AI layer for roadsafety_sim
 """
 
 import sys
-import os
 import random
 import threading
 from pathlib import Path
