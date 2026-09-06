@@ -435,10 +435,7 @@ class RoadHazardDetector:
                                       cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                       cv2.THRESH_BINARY_INV, 51, 8)
 
-        # Fixed threshold catches very dark pixels (deep potholes)
-        _, fixed = cv2.threshold(blurred, 70, 255, cv2.THRESH_BINARY_INV)
-        # OR: either adaptive pattern OR very dark pixel qualifies
-        combined = cv2.bitwise_or(adapt, fixed)
+        combined = adapt
 
         # Morphological cleanup
         kernel  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
