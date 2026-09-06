@@ -16,7 +16,7 @@ import random
 import time
 import uuid
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Optional
 
 # AI bridge — loads YOLOv8s from roadsafety_ai, provides get_result()
