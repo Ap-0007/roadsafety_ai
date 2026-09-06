@@ -120,6 +120,12 @@ def _hav(p1, p2) -> float:
     a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlng/2)**2
     return 6371 * 2 * math.asin(math.sqrt(min(1.0, a)))
 
+# Precompute segment distances
+for _r in ROUTE_MAP.values():
+    _wp = _r["wp"]
+    _n = len(_wp)
+    _r["seg_km"] = [_hav(_wp[i], _wp[(i + 1) % _n]) for i in range(_n)]
+
 
 # ─────────────────────────────────────────────────────────────
 # Data models
@@ -274,20 +280,25 @@ class SimEngine:
     # ──── Bus movement ───────────────────────────────────────
 
     def _move_bus(self, bus: Bus, dt: float):
-        wp  = ROUTE_MAP[bus.route_id]["wp"]
+        r   = ROUTE_MAP[bus.route_id]
+        wp  = r["wp"]
+        seg = r["seg_km"]
         n   = len(wp)
-        p0  = wp[bus.wp_idx % n]
-        p1  = wp[(bus.wp_idx + 1) % n]
 
-        seg_km   = _hav(p0, p1)
-        seg_s    = (seg_km / max(bus.speed, 1)) * 3600
+        idx = bus.wp_idx % n
+        seg_km = seg[idx]
+        seg_s  = (seg_km / max(bus.speed, 1)) * 3600
 
         bus.wp_frac += dt / seg_s
         while bus.wp_frac >= 1.0:
             bus.wp_frac -= 1.0
             bus.wp_idx   = (bus.wp_idx + 1) % n
-            p0 = wp[bus.wp_idx % n]
-            p1 = wp[(bus.wp_idx + 1) % n]
+            idx = bus.wp_idx % n
+            seg_km = seg[idx]
+            seg_s  = (seg_km / max(bus.speed, 1)) * 3600
+
+        p0 = wp[idx]
+        p1 = wp[(idx + 1) % n]
 
         f = bus.wp_frac
         bus.lat     = p0[0] + (p1[0] - p0[0]) * f + random.gauss(0, 0.000015)
