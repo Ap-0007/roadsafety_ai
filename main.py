@@ -661,7 +661,7 @@ def _decode_img(data: bytes) -> np.ndarray:
     arr   = np.frombuffer(data, np.uint8)
     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if frame is None:
-        raise HTTPException(400, "Could not decode image")
+        raise ValueError("Failed to decode image data.")
     return frame
 
 
