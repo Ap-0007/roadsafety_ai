@@ -11,6 +11,7 @@ import time
 import random
 from contextlib import asynccontextmanager
 from pathlib import Path
+import aiofiles
 
 import numpy as np
 import cv2
@@ -138,7 +139,11 @@ if Path("static").exists():
 @app.get("/", response_class=HTMLResponse)
 async def index():
     p = Path("static/index.html")
-    return p.read_text() if p.exists() else "<h1>Road Safety Sim</h1>"
+    try:
+        async with aiofiles.open(p, "r") as f:
+            return await f.read()
+    except FileNotFoundError:
+        return "<h1>Road Safety Sim</h1>"
 
 
 @app.websocket("/ws")
@@ -200,13 +205,21 @@ async def api_health():
 @app.get("/authority", response_class=HTMLResponse)
 async def authority_page():
     p = Path("static/authority.html")
-    return p.read_text() if p.exists() else "<h1>Authority Dashboard</h1>"
+    try:
+        async with aiofiles.open(p, "r") as f:
+            return await f.read()
+    except FileNotFoundError:
+        return "<h1>Authority Dashboard</h1>"
 
 
 @app.get("/presentation", response_class=HTMLResponse)
 async def presentation_page():
     p = Path("static/presentation.html")
-    return p.read_text() if p.exists() else "<h1>Presentation</h1>"
+    try:
+        async with aiofiles.open(p, "r") as f:
+            return await f.read()
+    except FileNotFoundError:
+        return "<h1>Presentation</h1>"
 
 
 @app.get("/presentation/download")
